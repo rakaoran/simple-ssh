@@ -1,14 +1,18 @@
 #include "stdio.h"
 #include <arpa/inet.h>
+#include <asm-generic/ioctls.h>
 #include <asm-generic/socket.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <pthread.h>
 #include <pty.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/epoll.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -16,8 +20,12 @@
 
 #define DEFAULT_PORT 10987
 
+const char COMMAND = 0;
+const char WINSIZE = 1;
+uint32_t pack(char *inbuf, uint16_t in_size, char type, char *outbuf, uint16_t out_size);
 void enable_raw_mode();
 void disable_raw_mode();
+void get_win_size(uint16_t *col, uint16_t *row);
 
 int main(int argc, char **argv) {
     int epfd = epoll_create1(EPOLL_CLOEXEC);
@@ -50,11 +58,11 @@ int main(int argc, char **argv) {
     sa.sin_port = htons(port);
 
     int err = connect(server_fd, (struct sockaddr *)&sa, sizeof(sa));
-
     if (err == -1) {
-        perror("connect");
+        perror("connect ossoso");
         exit(EXIT_FAILURE);
     }
+
     enable_raw_mode();
 
     struct epoll_event server_event;
@@ -67,6 +75,19 @@ int main(int argc, char **argv) {
     epoll_ctl(epfd, EPOLL_CTL_ADD, STDIN_FILENO, &stdin_event);
 
     struct epoll_event event;
+    char packedbuf[10000];
+    char buf[10000];
+    uint16_t col, row;
+    get_win_size(&col, &row);
+    uint16_t winsize[2];
+    *winsize = htons(col);
+    *(winsize + 1) = htons(row);
+    uint32_t n = pack((char *)winsize, sizeof(winsize), WINSIZE, packedbuf, sizeof(packedbuf));
+    err = send(server_fd, packedbuf, n, MSG_NOSIGNAL);
+    if (err == -1) {
+        perror("send winsize");
+        exit(EXIT_FAILURE);
+    }
     char c;
     while (1) {
         err = epoll_wait(epfd, &event, 1, -1);
@@ -76,26 +97,27 @@ int main(int argc, char **argv) {
         }
         if (event.events & (EPOLLIN)) {
             if (event.data.fd == server_fd) {
-                err = read(server_fd, &c, 1);
-                if (err == -1) {
+                int n = read(server_fd, buf, sizeof(buf));
+                if (n == -1) {
                     perror("read from server");
                     break;
                 }
-                if (err == 0) {
+                if (n == 0) {
                     break;
                 }
-                err = write(STDIN_FILENO, &c, 1);
+                err = write(STDIN_FILENO, buf, n);
                 if (err == -1) {
                     perror("read from server");
                     break;
                 }
             } else {
-                err = read(STDIN_FILENO, &c, 1);
-                if (err <= 0) {
+                int n = read(STDIN_FILENO, &c, 1);
+                if (n <= 0) {
                     perror("read from stdin");
                     break;
                 }
-                err = send(server_fd, &c, 1, MSG_NOSIGNAL);
+                int packet_size = pack(&c, 1, COMMAND, packedbuf, sizeof(packedbuf));
+                err = send(server_fd, packedbuf, packet_size, MSG_NOSIGNAL);
                 if (err == -1) {
                     perror("read from server");
                     break;
@@ -119,4 +141,27 @@ void enable_raw_mode() {
 
 void disable_raw_mode() {
     tcsetattr(STDIN_FILENO, 0, &old);
+}
+
+void get_win_size(uint16_t *col, uint16_t *row) {
+    struct winsize ws;
+
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1) {
+        perror("ioctl");
+        exit(EXIT_FAILURE);
+    }
+
+    *col = ws.ws_col;
+    *row = ws.ws_row;
+}
+
+uint32_t pack(char *inbuf, uint16_t in_size, char type, char *outbuf, uint16_t out_size) {
+    uint32_t total_size = in_size + 1 + sizeof(uint32_t);
+    if (out_size < total_size) {
+        return -1;
+    }
+    *((uint32_t *)(outbuf)) = htonl(total_size);
+    *(outbuf + sizeof(uint32_t)) = type;
+    memcpy((outbuf + 1 + sizeof(uint32_t)), inbuf, in_size);
+    return total_size;
 }

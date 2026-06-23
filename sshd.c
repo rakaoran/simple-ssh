@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "stdio.h"
 #include <arpa/inet.h>
+#include <asm-generic/ioctls.h>
 #include <asm-generic/socket.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -11,12 +12,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #define DEFAULT_PORT 10987
-#define MAX_CONNECTIONS 2
+#define MAX_CONNECTIONS 10
+
+const char COMMAND = 0;
+const char WINSIZE = 1;
 
 typedef int fd_t;
 const fd_t client_fdt = 0;
@@ -32,6 +37,7 @@ typedef struct Connection {
 
 void free_child_processes() {
     while (waitpid(-1, NULL, WNOHANG) > 0) {
+        printf("Child process freed\n");
     }
 }
 
@@ -46,7 +52,6 @@ void register_connection(int epfd, Connection *conn, int *count) {
 
     case master_fdt:
         epoll_ctl(epfd, EPOLL_CTL_ADD, conn->master_fd, &event);
-        printf("master fd %d registered\n", conn->master_fd);
         break;
 
     case server_fdt:
@@ -63,13 +68,11 @@ void unregister_connection(int epfd, Connection *conn, int *count) {
         close(conn->client_fd);
         printf("fd %d closed\n", conn->client_fd);
         close(other_conn->master_fd);
-        printf("fd %d closed\n", other_conn->master_fd);
         break;
     case master_fdt:
         epoll_ctl(epfd, EPOLL_CTL_DEL, other_conn->client_fd, NULL);
         epoll_ctl(epfd, EPOLL_CTL_DEL, conn->master_fd, NULL);
         close(conn->master_fd);
-        printf("fd %d closed\n", conn->master_fd);
         close(other_conn->client_fd);
         printf("fd %d closed\n", other_conn->client_fd);
         break;
@@ -124,11 +127,11 @@ int main(int argc, char **argv) {
         perror("bind");
         exit(1);
     }
-    char buf[10000];
+    char buf[1000000];
 
     while (1) {
         epoll_wait(epfd, &event, 1, -1);
-        uint32_t e = event.events;
+        uint16_t e = event.events;
         Connection *conn = event.data.ptr;
         if (e & EPOLLIN) {
             if (conn->fd_type == server_fdt) {
@@ -172,12 +175,36 @@ int main(int argc, char **argv) {
                     close(cfd);
                 }
             } else if (conn->fd_type == client_fdt) {
-                int n = read(conn->client_fd, buf, sizeof(buf));
+                uint32_t len;
+                int n = recv(conn->client_fd, &len, sizeof(len), MSG_PEEK);
+                len = ntohl(len);
                 if (n <= 0) {
                     unregister_connection(epfd, conn, &conn_count);
                     continue;
                 }
-                n = write(conn->master_fd, buf, n);
+                n = read(conn->client_fd, buf, len);
+                if (n != len) {
+                    printf("truncated packet! aborting...\n");
+                    unregister_connection(epfd, conn, &conn_count);
+                    continue;
+                }
+                int unpackedlen = len - 1 - sizeof(uint32_t);
+                if (*(buf + sizeof(uint32_t)) == COMMAND) {
+                    n = write(conn->master_fd, buf + 1 + sizeof(uint32_t), unpackedlen);
+                } else if (*(buf + sizeof(uint32_t)) == WINSIZE) {
+                    uint16_t col;
+                    uint16_t row;
+                    uint16_t *p = (uint16_t *)(buf + sizeof(uint32_t) + 1);
+                    col = *(uint16_t *)(p);
+                    row = *(uint16_t *)(p + 1);
+                    struct winsize ws;
+                    ws.ws_col = ntohs(col);
+                    ws.ws_row = ntohs(row);
+                    if (ioctl(conn->master_fd, TIOCSWINSZ, &ws) == -1) {
+                        n = -1;
+                        perror("ioctl");
+                    }
+                }
                 if (n == -1) {
                     unregister_connection(epfd, conn, &conn_count);
                     continue;
