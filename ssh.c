@@ -137,7 +137,7 @@ int main(int argc, char **argv) {
                 if (n == 0) {
                     break;
                 }
-                rv = write(STDIN_FILENO, buf, n);
+                rv = write(STDOUT_FILENO, buf, n);
                 if (rv == -1) {
                     perror("read from server");
                     break;
@@ -172,6 +172,7 @@ int main(int argc, char **argv) {
 struct termios old, new;
 void enable_raw_mode() {
     tcgetattr(0, &old);
+    new = old;
 
     cfmakeraw(&new);
     tcsetattr(STDIN_FILENO, 0, &new);

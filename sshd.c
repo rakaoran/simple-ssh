@@ -254,14 +254,27 @@ void recvfrom_client(Connection *conn) {
     }
 }
 
+int send_all(int fd, char *buf, ssize_t n, int opts) {
+    int total = 0;
+    char *p = buf;
+    while (total != n) {
+        int sentnow = send(fd, p + total, n - total, opts);
+        if (sentnow == -1) {
+            return -1;
+        }
+        total += sentnow;
+    }
+    return total;
+}
+
 void recvfrom_pty(Connection *conn) {
-    char buf[1999];
+    char buf[10000];
     int n = read(conn->master_fd, buf, sizeof(buf));
     if (n <= 0) {
         unreg_conn(conn);
         return;
     }
-    n = send(conn->client_fd, buf, n, MSG_NOSIGNAL | MSG_DONTWAIT);
+    n = send_all(conn->client_fd, buf, n, MSG_NOSIGNAL | MSG_DONTWAIT);
     if (n == -1) {
         unreg_conn(conn);
         return;
