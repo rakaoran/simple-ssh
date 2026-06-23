@@ -1,9 +1,7 @@
-#include "stdio.h"
 #include <arpa/inet.h>
 #include <asm-generic/errno-base.h>
 #include <asm-generic/ioctls.h>
 #include <asm-generic/socket.h>
-#include <bits/types/sigset_t.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <netdb.h>
@@ -13,6 +11,7 @@
 #include <pty.h>
 #include <signal.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>

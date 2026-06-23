@@ -3,7 +3,6 @@
 #include <arpa/inet.h>
 #include <asm-generic/ioctls.h>
 #include <asm-generic/socket.h>
-#include <bits/types/sigset_t.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <netdb.h>
@@ -28,13 +27,10 @@
 const char COMMAND = 0;
 const char WINSIZE = 1;
 
-typedef int fd_t;
-const fd_t client_fdt = 0;
-const fd_t master_fdt = 1;
-const fd_t server_fdt = 2;
-const fd_t signal_fdt = 3;
+enum fd_t { client_fdt, master_fdt, server_fdt, signal_fdt };
+
 typedef struct Connection {
-    fd_t fd_type;
+    enum fd_t fd_type;
     int master_fd;
     int client_fd;
     int server_fd;
@@ -174,6 +170,9 @@ void reg_conn(Connection *conn) {
     case server_fdt:
         epoll_ctl(epfd, EPOLL_CTL_ADD, conn->server_fd, &event);
         break;
+    case signal_fdt:
+        epoll_ctl(epfd, EPOLL_CTL_ADD, conn->signal_fd, &event);
+        break;
     }
 }
 void unreg_conn(Connection *conn) {
@@ -193,11 +192,14 @@ void unreg_conn(Connection *conn) {
         close(other_conn->client_fd);
         printf("fd %d closed\n", other_conn->client_fd);
         break;
+    case server_fdt:
+        break;
+    case signal_fdt:
+        break;
     }
     free(conn);
     free(other_conn);
     conn_count--;
-    free_child_procs();
 }
 void handle_new_conn(int cfd) {
     if (cfd == -1) {
