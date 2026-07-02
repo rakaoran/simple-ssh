@@ -35,7 +35,7 @@ Tested on x86-64 Linux natively and AArch64 Linux through `qemu-aarch64` user-mo
 Build:
 
 ```sh
-make server
+make
 ```
 
 ### Server
