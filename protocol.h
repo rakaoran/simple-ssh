@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <sys/types.h>
 
 #ifndef MAX_PACKET_SIZE
@@ -16,20 +17,30 @@
 #define OUTBUF_SIZE (5 * 1024 * 1024)
 #endif
 
-typedef struct _proto_conn {
-    int tcp_fd;
-    char *inbuf;
-    char *outbuf;
-    size_t inlen;
-    size_t outlen;
-    size_t pending_in;
-    size_t pending_out;
-    size_t in_ptr;
-    size_t out_ptr;
-} proto_conn;
+#ifndef KiB
+#define KiB 1024
+#endif
 
-// Takes address, port and return a file descriptor.
-// int proto_listen(char *address, char *port);
+typedef struct ringbuf_ {
+	char *buf;
+	size_t size;
+	size_t pending;
+	size_t offset;
+} ringbuf;
+
+ringbuf *rb_new(size_t size);
+void rb_free(ringbuf *rb);
+int rb_append(ringbuf *rb, char *buf, size_t len);
+size_t rb_copy(ringbuf *rb, char *buf, size_t len);
+int rb_consume(ringbuf *rb, size_t n);
+size_t rb_pending(ringbuf *rb);
+size_t rb_size(ringbuf *rb);
+
+typedef struct _proto_conn {
+	int tcp_fd;
+	ringbuf *inrb;
+	ringbuf *outrb;
+} proto_conn;
 
 int proto_flush(proto_conn *conn);
 int proto_load(proto_conn *conn);

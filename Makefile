@@ -8,9 +8,9 @@ client: ssh.c protocol.c protocol.h
 	@mkdir -p bin
 	clang -Wall -Wextra -g -O0 ssh.c protocol.c -o bin/ssh
 
-protocol-test: protocol.c protocol.h
+protocol-test: protocol.c protocol.h test_protocol.c
 	@mkdir -p bin
-	@clang -DMAX_PACKET_SIZE=50 -DMAX_PAYLOAD_SIZE=48 -DINBUF_SIZE=50 -DOUTBUF_SIZE=50\
+	@clang -DMAX_PACKET_SIZE=22 -DMAX_PAYLOAD_SIZE=20 -DINBUF_SIZE=50 -DOUTBUF_SIZE=50 -DKiB=2\
 		-Wall -Wextra -g -O0\
 		protocol.c test_protocol.c unity.c\
 		-o bin/test
