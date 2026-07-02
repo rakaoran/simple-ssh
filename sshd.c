@@ -67,6 +67,8 @@ int main(int argc, char **argv) {
 		if (server_fd == -1) {
 			continue;
 		}
+		int yes = 1;
+		setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 		int error = bind(server_fd, p->ai_addr, p->ai_addrlen);
 		if (error == 0) {
 			break;
@@ -79,9 +81,6 @@ int main(int argc, char **argv) {
 	}
 
 	freeaddrinfo(res);
-
-	int yes = 1;
-	setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 
 	connection *server_conn = malloc(sizeof(connection));
 	server_conn->server_fd = server_fd;
